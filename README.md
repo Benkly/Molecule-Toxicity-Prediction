@@ -1,6 +1,6 @@
-# Molecular Toxicity Prediction Pipeline
+# Aryl Hydrocarbon Receptor Toxicity Prediction Web App
 
-A machine learning pipeline for predicting molecular toxicity from SMILES strings, targeting the **NR-AhR (Aryl Hydrocarbon Receptor)** pathway from the Tox21 dataset.
+A machine learning pipeline for predicting **molecular toxicity** from SMILES strings, targeting the **NR-AhR (Aryl Hydrocarbon Receptor)** pathway from the Tox21 dataset.
 
 ## Overview
 
@@ -10,6 +10,8 @@ The model uses:
 - **12 molecular descriptors** (molecular weight, LogP, TPSA, H-bond donors/acceptors, etc.)
 - **ECFP-6 fingerprints** (2048-bit count vectors)
 - **XGBoost classifier** optimized for PR-AUC with Bayesian hyperparameter tuning
+
+**Refer to the `molecule-toxicity-predictor.ipynb` notebook for a detailed breakdown of the process used to create and evaluate the model.**
 
 ## Installation
 
@@ -85,30 +87,29 @@ print(get_batch_summary(results))
 
 ```
 capstone/
-├── app.py                       # Streamlit web application
-├── main.py                      # CLI entry point
-├── requirements.txt             # Python dependencies
+├── app.py                             # Streamlit web application
+├── main.py                            # CLI entry point
+├── requirements.txt                   # Python dependencies
+├── molecule-toxicity-predictor.ipynb  # Development notebook
+├── ecfp-diagram.png                   # ECFP explanation diagram
 ├── .gitignore
 ├── .streamlit/
-│   └── config.toml              # Streamlit theme configuration
+│   └── config.toml                    # Streamlit theme configuration
 ├── pipeline/
-│   ├── __init__.py              # Public API exports
-│   ├── config.py                # Paths, constants, model settings
-│   ├── molecule_utils.py        # SMILES validation & molecule conversion
-│   ├── feature_engineering.py   # Molecular descriptors & ECFP fingerprints
-│   ├── model_inference.py       # Model loading & prediction
-│   ├── explainer.py             # Formatted output generation
-│   └── pipeline.py              # Main orchestrator
+│   ├── __init__.py                    # Public API exports
+│   ├── config.py                      # Paths, constants, model settings
+│   ├── molecule_utils.py              # SMILES validation & molecule conversion
+│   ├── feature_engineering.py         # Molecular descriptors & ECFP fingerprints
+│   ├── model_inference.py             # Model loading & prediction
+│   ├── explainer.py                   # Formatted output generation
+│   └── pipeline.py                    # Main orchestrator
 ├── models/
-│   ├── xgb_nrahr_model.joblib   # Trained XGBoost model
-│   ├── descriptor_scaler.joblib # StandardScaler for descriptors
-│   ├── optimal_threshold.joblib # Classification threshold (F2-optimized)
-│   └── model_config.joblib      # Feature configuration metadata
-├── data/
-│   └── tox21.csv                # Training dataset
-└── notebooks/
-    ├── molecule-toxicity-predictor.ipynb  # Development notebook
-    └── ecfp-diagram.png                   # ECFP explanation diagram
+│   ├── xgb_nrahr_model.joblib         # Trained XGBoost model
+│   ├── descriptor_scaler.joblib       # StandardScaler for descriptors
+│   ├── optimal_threshold.joblib       # Classification threshold (F2-optimized)
+│   └── model_config.joblib            # Feature configuration metadata
+└── data/
+    └── tox21.csv                      # Training dataset
 ```
 
 ## Model Details
