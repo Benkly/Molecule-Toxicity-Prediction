@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
 from .molecule_utils import validate_smiles, MoleculeValidationResult
-from .feature_engineering import generate_features, get_descriptor_summary
+from .feature_engineering import generate_features, get_descriptor_summary, format_descriptor_summary
 from .model_inference import get_predictor
 from .explainer import generate_explanation, format_batch_results
 
@@ -18,7 +18,7 @@ class PredictionResult:
     is_valid: bool
     prediction: Optional[int]
     probability: Optional[float]
-    descriptors: Optional[Dict[str, str]]
+    descriptors: Optional[Dict[str, float]]
     explanation: Optional[str]
     error: Optional[str]
     
@@ -84,13 +84,14 @@ def predict_and_explain(smiles: str) -> PredictionResult:
     
     # Step 4: Get descriptor summary for explanation
     descriptors = get_descriptor_summary(mol)
+    formatted_descriptors = format_descriptor_summary(descriptors)
     
     # Step 5: Generate explanation
     explanation = generate_explanation(
         smiles=smiles,
         prediction=prediction,
         probability=probability,
-        descriptors=descriptors
+        descriptors=formatted_descriptors
     )
     
     return PredictionResult(

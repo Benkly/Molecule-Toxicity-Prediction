@@ -132,33 +132,62 @@ def generate_features_batch(mols: List[Chem.Mol]) -> pd.DataFrame:
     return pd.concat(all_features, ignore_index=True)
 
 
-def get_descriptor_summary(mol: Chem.Mol) -> Dict[str, str]:
+def get_descriptor_summary(mol: Chem.Mol) -> Dict[str, float]:
     """
-    Get human-readable summary of molecular descriptors.
+    Get molecular descriptors as numeric values.
     
     Args:
         mol: RDKit molecule object
         
     Returns:
-        Dictionary with descriptor names and formatted values with descriptions
+        Dictionary with descriptor names and float values
     """
     descriptors = calculate_molecular_descriptors(mol)
     if descriptors is None:
         return {}
     
     summary = {
-        'Molecular Weight': f"{descriptors['MolWeight']:.2f} Da",
-        'LogP (Lipophilicity)': f"{descriptors['LogP']:.2f}",
-        'Topological Polar Surface Area': f"{descriptors['TPSA']:.2f} Å²",
-        'Hydrogen Bond Donors': str(int(descriptors['NumHDonors'])),
-        'Hydrogen Bond Acceptors': str(int(descriptors['NumHAcceptors'])),
-        'Rotatable Bonds': str(int(descriptors['NumRotatableBonds'])),
-        'Total Atoms': str(int(descriptors['NumAtoms'])),
-        'Heavy Atoms': str(int(descriptors['NumHeavyAtoms'])),
-        'Ring Count': str(int(descriptors['NumRings'])),
-        'Aromatic Rings': str(int(descriptors['NumAromaticRings'])),
-        'Fraction sp3 Carbons': f"{descriptors['FractionCSP3']:.3f}",
-        'Bertz Complexity': f"{descriptors['BertzCT']:.2f}"
+        'Molecular Weight': float(descriptors['MolWeight']),
+        'LogP': float(descriptors['LogP']),
+        'TPSA': float(descriptors['TPSA']),
+        'Hydrogen Bond Donors': float(descriptors['NumHDonors']),
+        'Hydrogen Bond Acceptors': float(descriptors['NumHAcceptors']),
+        'Rotatable Bonds': float(descriptors['NumRotatableBonds']),
+        'Total Atoms': float(descriptors['NumAtoms']),
+        'Heavy Atoms': float(descriptors['NumHeavyAtoms']),
+        'Ring Count': float(descriptors['NumRings']),
+        'Aromatic Rings': float(descriptors['NumAromaticRings']),
+        'Fraction sp3 Carbons': float(descriptors['FractionCSP3']),
+        'Bertz Complexity': float(descriptors['BertzCT'])
     }
     
     return summary
+
+
+def format_descriptor_summary(descriptors: Dict[str, float]) -> Dict[str, str]:
+    """
+    Format descriptor values for human-readable display.
+    
+    Args:
+        descriptors: Dictionary of descriptor names to float values
+        
+    Returns:
+        Dictionary with formatted string values
+    """
+    if not descriptors:
+        return {}
+    
+    return {
+        'Molecular Weight': f"{descriptors['Molecular Weight']:.2f} Da",
+        'LogP': f"{descriptors['LogP']:.2f}",
+        'TPSA': f"{descriptors['TPSA']:.2f} Å²",
+        'Hydrogen Bond Donors': str(int(descriptors['Hydrogen Bond Donors'])),
+        'Hydrogen Bond Acceptors': str(int(descriptors['Hydrogen Bond Acceptors'])),
+        'Rotatable Bonds': str(int(descriptors['Rotatable Bonds'])),
+        'Total Atoms': str(int(descriptors['Total Atoms'])),
+        'Heavy Atoms': str(int(descriptors['Heavy Atoms'])),
+        'Ring Count': str(int(descriptors['Ring Count'])),
+        'Aromatic Rings': str(int(descriptors['Aromatic Rings'])),
+        'Fraction sp3 Carbons': f"{descriptors['Fraction sp3 Carbons']:.3f}",
+        'Bertz Complexity': f"{descriptors['Bertz Complexity']:.2f}"
+    }

@@ -9,7 +9,8 @@ import pubchempy as pcp
 from io import BytesIO
 
 from pipeline import predict_and_explain, validate_smiles
-from pipeline.feature_engineering import get_descriptor_summary
+from pipeline.feature_engineering import get_descriptor_summary, format_descriptor_summary
+from pipeline.llm_explainer import generate_llm_explanation, check_cooldown
 
 
 # Page configuration
@@ -222,11 +223,27 @@ else:
         if smiles_input:
             st.success(f"Found SMILES: `{smiles_input}`")
 
+# Initialize session state
+if 'prediction_result' not in st.session_state:
+    st.session_state.prediction_result = None
+if 'prediction_smiles' not in st.session_state:
+    st.session_state.prediction_smiles = None
+if 'last_explanation' not in st.session_state:
+    st.session_state.last_explanation = None
+if 'explanation_error' not in st.session_state:
+    st.session_state.explanation_error = None
+
 # Predict button
 predict_clicked = st.button("🔬 Predict Toxicity", use_container_width=True)
 
-# Results section
+# Handle prediction
 if predict_clicked:
+    # Clear previous results
+    st.session_state.prediction_result = None
+    st.session_state.prediction_smiles = None
+    st.session_state.last_explanation = None
+    st.session_state.explanation_error = None
+    
     if error_message:
         st.error(error_message)
     elif not smiles_input:
@@ -244,90 +261,170 @@ if predict_clicked:
             if result.error:
                 st.error(f"Prediction error: {result.error}")
             else:
-                st.markdown("---")
-                
-                # Two column layout
-                col1, col2 = st.columns([1, 1])
-                
-                # Left column: Molecule image
-                with col1:
-                    st.subheader("Molecular Structure")
-                    img_buf = render_molecule_image(smiles_input)
-                    if img_buf:
-                        st.image(img_buf, use_container_width=True)
-                
-                # Right column: Prediction result
-                with col2:
-                    st.subheader("Prediction Result")
-                    
-                    is_toxic = result.prediction == 1
-                    probability = result.probability
-                    confidence = probability if is_toxic else (1 - probability)
-                    
-                    if is_toxic:
-                        st.markdown(f"""
-                        <div class="prediction-toxic">
-                            <h2 style="color: #DE1A1A; margin: 0;">⚠️ TOXIC</h2>
-                            <p style="font-size: 1.2rem; margin-top: 0.5rem;">
-                                Likely to activate NR-AhR pathway
-                            </p>
-                            <p style="font-size: 2rem; font-weight: bold; color: #DE1A1A; margin: 0.5rem 0;">
-                                {probability:.1%}
-                            </p>
-                            <p style="color: #FAFAFA; opacity: 0.8;">Toxicity Probability</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                        <div class="prediction-nontoxic">
-                            <h2 style="color: #C4EBC8; margin: 0;">✓ NON-TOXIC</h2>
-                            <p style="font-size: 1.2rem; margin-top: 0.5rem;">
-                                Unlikely to activate NR-AhR pathway
-                            </p>
-                            <p style="font-size: 2rem; font-weight: bold; color: #C4EBC8; margin: 0.5rem 0;">
-                                {confidence:.1%}
-                            </p>
-                            <p style="color: #FAFAFA; opacity: 0.8;">Confidence</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                
-                # Molecular descriptors section
-                st.markdown("---")
-                st.subheader("Molecular Descriptors")
-                
-                descriptors = result.descriptors
-                
-                # Display in 3 columns
-                desc_cols = st.columns(3)
-                desc_items = list(descriptors.items())
-                
-                for i, (name, value) in enumerate(desc_items):
-                    col_idx = i % 3
-                    with desc_cols[col_idx]:
-                        st.markdown(f"""
-                        <div class="metric-card">
-                            <p style="color: #C4EBC8; font-size: 0.85rem; margin: 0;">{name}</p>
-                            <p style="font-size: 1.3rem; font-weight: bold; margin: 0.25rem 0 0 0;">{value}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                
-                # About section
-                st.markdown("---")
-                with st.expander("ℹ️ About the NR-AhR Assay"):
-                    st.markdown("""
-                    **Model Details:**
-                    - Trained on the Tox21 dataset (~7,800 compounds)
-                    - Uses molecular descriptors + ECFP-6 fingerprints
-                    - XGBoost classifier optimized to *minimise* false negatives
-                    
-                    ---
-                    
-                    **Performance (on test data):**
-                    - Overall accuracy: 90.2%
-                    - % Toxins Misclassified: 20.8%
-                    
-                    ⚠️ *REMEMBER: this tool is for screening purposes only and does not replace experimental validation.*
-                    """)
+                # Store results in session state
+                st.session_state.prediction_result = result
+                st.session_state.prediction_smiles = smiles_input
+
+# Display results if available
+if st.session_state.prediction_result is not None:
+    result = st.session_state.prediction_result
+    current_smiles = st.session_state.prediction_smiles
+    
+    st.markdown("---")
+    
+    # Two column layout
+    col1, col2 = st.columns([1, 1])
+    
+    # Left column: Molecule image
+    with col1:
+        st.subheader("Molecular Structure")
+        img_buf = render_molecule_image(current_smiles)
+        if img_buf:
+            st.image(img_buf, use_container_width=True)
+    
+    # Right column: Prediction result
+    with col2:
+        st.subheader("Prediction Result")
+        
+        is_toxic = result.prediction == 1
+        probability = result.probability
+        confidence = probability if is_toxic else (1 - probability)
+        
+        if is_toxic:
+            st.markdown(f"""
+            <div class="prediction-toxic">
+                <h2 style="color: #DE1A1A; margin: 0;">⚠️ TOXIC</h2>
+                <p style="font-size: 1.2rem; margin-top: 0.5rem;">
+                    Likely to activate NR-AhR pathway
+                </p>
+                <p style="font-size: 2rem; font-weight: bold; color: #DE1A1A; margin: 0.5rem 0;">
+                    {probability:.1%}
+                </p>
+                <p style="color: #FAFAFA; opacity: 0.8;">Toxicity Probability</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="prediction-nontoxic">
+                <h2 style="color: #C4EBC8; margin: 0;">✓ NON-TOXIC</h2>
+                <p style="font-size: 1.2rem; margin-top: 0.5rem;">
+                    Unlikely to activate NR-AhR pathway
+                </p>
+                <p style="font-size: 2rem; font-weight: bold; color: #C4EBC8; margin: 0.5rem 0;">
+                    {confidence:.1%}
+                </p>
+                <p style="color: #FAFAFA; opacity: 0.8;">Confidence</p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # Molecular descriptors section
+    st.markdown("---")
+    st.subheader("Molecular Descriptors")
+    
+    # Format descriptors for display
+    formatted_descriptors = format_descriptor_summary(result.descriptors)
+    
+    # Display in 3 columns
+    desc_cols = st.columns(3)
+    desc_items = list(formatted_descriptors.items())
+    
+    for i, (name, value) in enumerate(desc_items):
+        col_idx = i % 3
+        with desc_cols[col_idx]:
+            st.markdown(f"""
+            <div class="metric-card">
+                <p style="color: #C4EBC8; font-size: 0.85rem; margin: 0;">{name}</p>
+                <p style="font-size: 1.3rem; font-weight: bold; margin: 0.25rem 0 0 0;">{value}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # LLM Explanation section
+    st.markdown("---")
+    st.subheader("Explain this Result")
+    st.markdown("""
+    Obtain:
+    
+    * A detailed breakdown of the prediction based on 
+    the molecular features and their contributions to the model's decision.
+    
+    * An assessment of the molecule's bioavailability based on Lipinski and Verber's rules.
+    
+    *Note, each explanation incurs a small cost (a fraction of $0.01).*
+    """)
+    
+    # Check cooldown status
+    can_request, seconds_remaining = check_cooldown()
+    
+    # Explanation button
+    col_btn, col_status = st.columns([1, 2])
+    
+    with col_btn:
+        explain_disabled = not can_request or st.session_state.last_explanation is not None
+        explain_clicked = st.button(
+            "🧠 Generate Interpretation",
+            use_container_width=True,
+            disabled=explain_disabled,
+            key="explain_btn"
+        )
+    
+    with col_status:
+        if not can_request and st.session_state.last_explanation is None:
+            st.info(f"⏱️ Please wait {seconds_remaining}s before next request")
+        elif st.session_state.last_explanation is not None:
+            st.success("✓ Interpretation generated")
+    
+    # Handle explanation generation
+    if explain_clicked and can_request:
+        with st.spinner("Generating AI interpretation..."):
+            llm_result = generate_llm_explanation(
+                smiles=current_smiles,
+                prediction=result.prediction,
+                probability=result.probability,
+                descriptors=result.descriptors
+            )
+        
+        if llm_result.success:
+            st.session_state.last_explanation = llm_result.explanation
+            st.session_state.explanation_error = None
+            st.rerun()
+        else:
+            st.session_state.explanation_error = (llm_result.error_type, llm_result.error_message)
+            st.rerun()
+    
+    # Display error if any
+    if st.session_state.explanation_error:
+        error_type, error_msg = st.session_state.explanation_error
+        if error_type == 'cooldown':
+            st.warning(error_msg)
+        elif error_type == 'credits':
+            st.error(f"💳 {error_msg}")
+        elif error_type == 'config':
+            st.error(f"⚙️ {error_msg}")
+        else:
+            st.error(f"❌ {error_msg}")
+    
+    # Display explanation if available
+    if st.session_state.last_explanation:
+        st.markdown("---")
+        st.markdown(st.session_state.last_explanation)
+    
+    # About section
+    st.markdown("---")
+    with st.expander("ℹ️ About the NR-AhR Assay"):
+        st.markdown("""
+        **Model Details:**
+        - Trained on the Tox21 dataset (~7,800 compounds)
+        - Uses molecular descriptors + ECFP-6 fingerprints
+        - XGBoost classifier optimized to *minimise* false negatives
+        
+        ---
+        
+        **Performance (on test data):**
+        - Overall accuracy: 90.2%
+        - % Toxins Misclassified: 20.8%
+        
+        ⚠️ *REMEMBER: this tool is for screening purposes only and does not replace experimental validation.*
+        """)
 
 # Footer
 st.markdown("---")
