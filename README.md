@@ -27,6 +27,15 @@ venv\Scripts\activate     # Windows
 pip install -r requirements.txt
 ```
 
+3. Configure API key for AI explanations (optional):
+
+Create a `.env` file in the project root:
+```
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+```
+
+The AI interpretation feature requires an [OpenRouter](https://openrouter.ai) API key. The app will function without it, but the "Generate Interpretation" button will be disabled.
+
 ## Usage
 
 ### Web Application (Streamlit)
@@ -42,6 +51,7 @@ Features:
 - Visual molecule structure rendering
 - Toxicity prediction with confidence score
 - Full molecular descriptor summary
+- **AI-powered interpretation**: Generate natural language explanations of predictions using GPT-4o-mini, based on SHAP feature attributions
 
 ### Command Line
 
@@ -102,7 +112,12 @@ capstone/
 │   ├── feature_engineering.py         # Molecular descriptors & ECFP fingerprints
 │   ├── model_inference.py             # Model loading & prediction
 │   ├── explainer.py                   # Formatted output generation
+│   ├── llm_explainer.py               # GenAI-powered SHAP-based explanations
 │   └── pipeline.py                    # Main orchestrator
+├── prompts/
+│   └── explainer_system_prompt.md     # LLM system prompt for interpretations
+├── tests/
+│   └── test_explainer_prompt.py       # LLM explainer validation tests
 ├── models/
 │   ├── xgb_nrahr_model.joblib         # Trained XGBoost model
 │   ├── descriptor_scaler.joblib       # StandardScaler for descriptors
@@ -150,6 +165,29 @@ On held-out test set:
 - **PR-AUC**: ~0.65
 
 The model uses an F2-optimized threshold to minimize false negatives (missed toxic compounds), as this is the more costly error in toxicity screening.
+
+## AI Interpretation
+
+The web application includes an optional AI-powered interpretation feature that generates natural language explanations of predictions.
+
+**How it works:**
+1. SHAP (SHapley Additive exPlanations) values are computed for each prediction using the XGBoost model
+2. The top contributing features (both positive and negative) are identified
+3. ECFP fingerprint bits are mapped back to substructure SMARTS patterns where possible
+4. This data is sent to GPT-4o-mini via OpenRouter with a carefully crafted system prompt
+5. The LLM generates a human-readable explanation that describes *what the model weighted*, not causal claims about toxicity
+
+**Anti-hallucination measures:**
+- The prompt explicitly forbids claims about known toxicophores or biochemical mechanisms
+- All statements are framed as model correlations, not chemical facts
+- ECFP bit numbers are translated to chemical language (never shown raw)
+- A self-verification checklist ensures output quality
+
+**Rate limiting:**
+- 15-second cooldown between explanation requests to manage API costs
+
+**Cost:**
+- Approximately $0.003-0.005 per explanation using GPT-4o-mini
 
 ## Data Source
 
