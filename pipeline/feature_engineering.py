@@ -9,7 +9,7 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import Descriptors, GraphDescriptors, rdFingerprintGenerator
 
-from .config import MORGAN_RADIUS, MORGAN_FP_SIZE, DESCRIPTOR_COLS
+from .config import MORGAN_RADIUS, MORGAN_FP_SIZE, DESCRIPTOR_COLS, DESCRIPTOR_INTERNAL_TO_DISPLAY
 
 
 # Initialize Morgan fingerprint generator (module-level for reuse)
@@ -134,34 +134,24 @@ def generate_features_batch(mols: List[Chem.Mol]) -> pd.DataFrame:
 
 def get_descriptor_summary(mol: Chem.Mol) -> Dict[str, float]:
     """
-    Get molecular descriptors as numeric values.
+    Get molecular descriptors as numeric values with display names.
     
     Args:
         mol: RDKit molecule object
         
     Returns:
-        Dictionary with descriptor names and float values
+        Dictionary with display names and float values
     """
     descriptors = calculate_molecular_descriptors(mol)
     if descriptors is None:
         return {}
     
-    summary = {
-        'Molecular Weight': float(descriptors['MolWeight']),
-        'LogP': float(descriptors['LogP']),
-        'TPSA': float(descriptors['TPSA']),
-        'Hydrogen Bond Donors': float(descriptors['NumHDonors']),
-        'Hydrogen Bond Acceptors': float(descriptors['NumHAcceptors']),
-        'Rotatable Bonds': float(descriptors['NumRotatableBonds']),
-        'Total Atoms': float(descriptors['NumAtoms']),
-        'Heavy Atoms': float(descriptors['NumHeavyAtoms']),
-        'Ring Count': float(descriptors['NumRings']),
-        'Aromatic Rings': float(descriptors['NumAromaticRings']),
-        'Fraction sp3 Carbons': float(descriptors['FractionCSP3']),
-        'Bertz Complexity': float(descriptors['BertzCT'])
+    # Convert internal names to display names
+    return {
+        DESCRIPTOR_INTERNAL_TO_DISPLAY[key]: float(value)
+        for key, value in descriptors.items()
+        if key in DESCRIPTOR_INTERNAL_TO_DISPLAY
     }
-    
-    return summary
 
 
 def format_descriptor_summary(descriptors: Dict[str, float]) -> Dict[str, str]:

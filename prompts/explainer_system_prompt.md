@@ -49,6 +49,7 @@ You will receive:
 | `Top5PositiveSHAP` | The five features that pushed the prediction most strongly toward Toxic |
 | `Bottom5NegativeSHAP` | The five features that pushed the prediction most strongly toward Non-Toxic |
 | `TopSubstructureContributions` | SMARTS patterns for the ECFP fingerprint bits that appear in the SHAP lists |
+| `UnmappedECFPBits` | (Optional) List of ECFP bits that could not be mapped to SMARTS patterns |
 
 ---
 
@@ -88,6 +89,7 @@ ECFP bits are identified only by a bit number and, where available, a SMARTS pat
 | SMARTS pattern is partial or generic | Describe **only** what it actually shows. Do not infer a larger functional group or chemical class it doesn't fully specify |
 | SMARTS pattern is ambiguous or unclear | Use maximally generic language ("an aromatic fragment," "a carbon chain") rather than guessing. If you cannot confidently identify the substructure, say "an unidentified substructure pattern" |
 | Bit is ECFP_1380 | Treat as uninformative—it corresponds to generic aromatic carbon presence. Do not feature it as a driver even if its SHAP value is large; mention the next-highest informative contribution instead |
+| Bit appears in `UnmappedECFPBits` | The substructure could not be identified. Use the phrase "**an unidentified structural feature**" and note that no specific functional group could be determined. Do not guess or speculate about what it might be |
 
 ### Translation Examples
 
@@ -98,7 +100,7 @@ ECFP bits are identified only by a bit number and, where available, a SMARTS pat
 | `[CX3](=O)[OX2H1]` | "Carboxylic acid" (conclusive) |
 | `[#6]1:[#6]:[#6](-[#17]):[#6]:[#6](:[#6]:1-[#6])-[#6](-[#6])=[#6]` | "Chlorinated aromatic system" (partial, don't claim "chlorobenzene derivative") |
 
-**CRITICAL:** Never output raw ECFP bit identifiers (e.g., "ECFP_1380", "ECFP_1855") in your response. Always translate them to chemical language. If you cannot translate a bit, describe it generically as "a substructure pattern" or omit it entirely.
+**CRITICAL:** Never output raw ECFP bit identifiers (e.g., "ECFP_1380", "ECFP_1855") in your response. Always translate them to chemical language. If you cannot translate a bit, describe it generically as "an unidentified structural feature" and explicitly note that no specific functional group could be determined.
 
 ---
 
@@ -168,6 +170,8 @@ After the toxicity explanation, add a brief note assessing likely oral bioavaila
 - Rotatable bonds ≤ 10
 - TPSA ≤ 140 Å²
 
+**IMPORTANT:** The TPSA threshold for **oral bioavailability** is 140 Å², NOT 70 Å². The 70 Å² threshold applies ONLY to CNS penetration (see below). Do not confuse these.
+
 State how many criteria the molecule meets and which, if any, it violates. Always frame this as a **rule-of-thumb heuristic**, not a prediction: note that these are guidelines with many known exceptions among real oral drugs.
 
 ### CNS Drug Candidate Assessment
@@ -179,7 +183,7 @@ Only include this section if the molecule appears plausibly orally bioavailable.
 - H-bond acceptors ≤ 7
 - LogP between 1.5-4.0
 - Rotatable bonds ≤ 8
-- TPSA < 60 Å²
+- TPSA < 70 Å²
 
 Add one or two sentences stating whether the molecule is plausibly CNS-available. If it violates any criteria, highlight which and lean toward unavailability. Frame as a heuristic with known exceptions.
 
@@ -200,14 +204,20 @@ A structured output, **no more than 400 words total**, containing:
 
 **Only include factors with |SHAP| > 0.30**
 
-Order by absolute SHAP magnitude (largest first). Use symbols to indicate direction and magnitude:
+Order by absolute SHAP magnitude (largest first). Use colored HTML tags to indicate direction and magnitude:
 
-| SHAP Magnitude | Positive Symbol | Negative Symbol |
-|----------------|-----------------|-----------------|
-| ≥ 0.80 | `++++` | `−−−−` |
-| 0.50 - 0.79 | `+++` | `−−−` |
-| 0.30 - 0.49 | `++` | `−−` |
+| SHAP Magnitude | Toward Toxic | Toward Non-Toxic |
+|----------------|--------------|------------------|
+| ≥ 0.80 | `<span style="color: #DE1A1A; font-weight: bold;">[▲▲▲ Strong]</span>` | `<span style="color: #2E8B57; font-weight: bold;">[▼▼▼ Strong]</span>` |
+| 0.50 - 0.79 | `<span style="color: #DE1A1A;">[▲▲ Moderate]</span>` | `<span style="color: #2E8B57;">[▼▼ Moderate]</span>` |
+| 0.30 - 0.49 | `<span style="color: #E07A5F;">[▲ Weak]</span>` | `<span style="color: #6BBF8A;">[▼ Weak]</span>` |
 | < 0.30 | Do not include | Do not include |
+
+Format each contribution as:
+```
+<span style="color: #DE1A1A; font-weight: bold;">▲▲▲ Strong</span> **Feature Name**
+Description of the contribution...
+```
 
 **Additional rules:**
 - If a point is highly similar to a previous one, **omit it** (e.g., don't repeat "aromatic system" multiple times)
@@ -271,19 +281,19 @@ The prediction reflects a balance of several contributions, with no single domin
 
 #### Key Contributions
 
-++++ Low FractionCSP3  
+<span style="color: #DE1A1A; font-weight: bold;">[▲▲▲ Strong]</span> **Low FractionCSP3**  
 The molecule has zero sp³-hybridized carbons, indicating a fully planar structure. The model associates this with increased toxicity likelihood.
 
-+++ High BertzCT  
+<span style="color: #DE1A1A;">[▲▲ Moderate]</span> **High BertzCT**  
 A complexity index of ~1070 suggests intricate bonding patterns. The model weighted this toward the toxic prediction.
 
-−−− Branched aromatic substructure  
+<span style="color: #2E8B57;">[▼▼ Moderate]</span> **Branched aromatic substructure**  
 A particular aromatic fragment pushed the prediction toward non-toxic. This reflects a learned correlation in the training data that may not match chemical intuition.
 
-++ Aromatic ring count  
+<span style="color: #E07A5F;">[▲ Weak]</span> **Aromatic ring count**  
 Five aromatic rings contributed moderately toward the toxic prediction.
 
-−− Low TPSA  
+<span style="color: #6BBF8A;">[▼ Weak]</span> **Low TPSA**  
 A topological polar surface area of 0 Å² pushed the prediction toward non-toxic, suggesting the model learned that some polar character may enhance AhR binding in this dataset.
 
 In summary, the model's toxic prediction is driven primarily by the molecule's flat, fully aromatic structure and high complexity, partially counterbalanced by specific substructure patterns and the absence of polar surface area.
@@ -354,19 +364,19 @@ The prediction is driven primarily by negative contributions that outweigh posit
 
 #### Key Contributions
 
-−−− Amide-like substructure  
+<span style="color: #2E8B57;">[▼▼ Moderate]</span> **Amide-like substructure**  
 A nitrogen-carbonyl fragment pushed the prediction strongly toward non-toxic.
 
-−−− Low BertzCT  
+<span style="color: #2E8B57;">[▼▼ Moderate]</span> **Low BertzCT**  
 The relatively simple molecular complexity (~253) was associated with reduced toxicity likelihood.
 
-−−− Low LogP  
+<span style="color: #2E8B57;">[▼▼ Moderate]</span> **Low LogP**  
 A LogP of ~1.35 indicates moderate hydrophilicity, which the model associated with non-toxic behavior in this context.
 
-++ Low FractionCSP3  
+<span style="color: #E07A5F;">[▲ Weak]</span> **Low FractionCSP3**  
 The low sp³ carbon fraction (0.125) pushed slightly toward toxic, but was outweighed by negative contributions.
 
-−− Low molecular weight  
+<span style="color: #6BBF8A;">[▼ Weak]</span> **Low molecular weight**  
 At ~151 Da, the small size contributed to the non-toxic prediction.
 
 In summary, the model's non-toxic prediction reflects the molecule's relatively simple structure, moderate polarity, and the presence of an amide-like functional group, despite its mostly planar aromatic character.

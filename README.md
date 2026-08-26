@@ -1,10 +1,10 @@
 # Aryl Hydrocarbon Receptor Toxicity Prediction Web App
 
-A machine learning pipeline for predicting **molecular toxicity** from SMILES strings, targeting the **NR-AhR (Aryl Hydrocarbon Receptor)** pathway from the Tox21 dataset.
+A machine learning web application for predicting **molecular toxicity** from SMILES strings, targeting the **NR-AhR (Aryl Hydrocarbon Receptor)** pathway from the Tox21 dataset.
 
 ## Overview
 
-This pipeline takes one or more SMILES strings as input and predicts whether each molecule is likely to activate the AhR pathway - a key indicator of potential toxicity linked to inflammation, immunotoxicity, and carcinogenicity.
+This application takes SMILES strings as input and predicts whether each molecule is likely to activate the AhR pathway - a key indicator of potential toxicity linked to inflammation, immunotoxicity, and carcinogenicity.
 
 The model uses:
 - **12 molecular descriptors** (molecular weight, LogP, TPSA, H-bond donors/acceptors, etc.)
@@ -38,14 +38,13 @@ The AI interpretation feature requires an [OpenRouter](https://openrouter.ai) AP
 
 ## Usage
 
-### Web Application (Streamlit)
-
-Launch the interactive web interface:
+Launch the web application:
 ```bash
 streamlit run app.py
 ```
 
-Features:
+### Single Molecule Analysis
+
 - Input molecules via SMILES string or CAS registry number
 - Automatic CAS to SMILES conversion using PubChem
 - Visual molecule structure rendering
@@ -53,56 +52,25 @@ Features:
 - Full molecular descriptor summary
 - **AI-powered interpretation**: Generate natural language explanations of predictions using GPT-4o-mini, based on SHAP feature attributions
 
-### Command Line
+### Batch Upload
 
-**Single molecule with full report:**
-```bash
-python main.py "CCOc1ccc2nc(S(N)(=O)=O)sc2c1"
-```
+- Upload CSV files (with a `SMILES` column) or TXT files (one SMILES per line)
+- Process multiple molecules at once with progress tracking
+- View results in an interactive table
+- Download results as CSV with all predictions and descriptors
 
-**Multiple molecules with summary table:**
-```bash
-python main.py --summary "CCOc1ccc2nc(S(N)(=O)=O)sc2c1" "c1ccccc1" "CC(=O)Oc1ccccc1C(=O)O"
-```
-
-**From file (one SMILES per line):**
-```bash
-python main.py --file molecules.txt
-python main.py --file molecules.txt --summary
-```
-
-**Options:**
-- `--summary, -s`: Show summary table only (for batch predictions)
-- `--file, -f`: Path to file containing SMILES strings
-- `--verbose, -v`: Show progress during batch processing
-
-### Programmatic
-
-```python
-from pipeline import predict_and_explain, predict_batch, get_batch_summary
-
-# Single molecule
-result = predict_and_explain("CCOc1ccc2nc(S(N)(=O)=O)sc2c1")
-print(result.prediction)     # 1 (toxic) or 0 (non-toxic)
-print(result.probability)    # Probability of toxicity (0-1)
-print(result.descriptors)    # Dict of molecular properties
-print(result.explanation)    # Full formatted report
-
-# Batch processing
-results = predict_batch(["SMILES1", "SMILES2", "SMILES3"])
-print(get_batch_summary(results))
-```
+*Note: AI interpretation is available for single molecules only, not batch uploads.*
 
 ## Project Structure
 
 ```
 capstone/
 ├── app.py                             # Streamlit web application
-├── main.py                            # CLI entry point
 ├── requirements.txt                   # Python dependencies
 ├── molecule-toxicity-predictor.ipynb  # Development notebook
 ├── ecfp-diagram.png                   # ECFP explanation diagram
 ├── .gitignore
+├── .env                               # API key configuration (not in repo)
 ├── .streamlit/
 │   └── config.toml                    # Streamlit theme configuration
 ├── pipeline/
@@ -111,13 +79,10 @@ capstone/
 │   ├── molecule_utils.py              # SMILES validation & molecule conversion
 │   ├── feature_engineering.py         # Molecular descriptors & ECFP fingerprints
 │   ├── model_inference.py             # Model loading & prediction
-│   ├── explainer.py                   # Formatted output generation
 │   ├── llm_explainer.py               # GenAI-powered SHAP-based explanations
 │   └── pipeline.py                    # Main orchestrator
 ├── prompts/
 │   └── explainer_system_prompt.md     # LLM system prompt for interpretations
-├── tests/
-│   └── test_explainer_prompt.py       # LLM explainer validation tests
 ├── models/
 │   ├── xgb_nrahr_model.joblib         # Trained XGBoost model
 │   ├── descriptor_scaler.joblib       # StandardScaler for descriptors
@@ -181,10 +146,8 @@ The web application includes an optional AI-powered interpretation feature that 
 - The prompt explicitly forbids claims about known toxicophores or biochemical mechanisms
 - All statements are framed as model correlations, not chemical facts
 - ECFP bit numbers are translated to chemical language (never shown raw)
+- When a substructure cannot be identified from an ECFP bit, the explanation explicitly flags this as "an unidentified structural feature" rather than guessing
 - A self-verification checklist ensures output quality
-
-**Rate limiting:**
-- 15-second cooldown between explanation requests to manage API costs
 
 **Cost:**
 - Approximately $0.003-0.005 per explanation using GPT-4o-mini

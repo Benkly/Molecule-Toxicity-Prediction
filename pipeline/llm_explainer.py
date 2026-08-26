@@ -7,19 +7,17 @@ based on SHAP values and molecular descriptors.
 
 import os
 import json
-import time
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
-import numpy as np
 import pandas as pd
 import shap
 from openai import OpenAI
 from dotenv import load_dotenv
 from rdkit import Chem
 
-from .config import BASE_DIR, DESCRIPTOR_COLS
+from .config import BASE_DIR, DESCRIPTOR_DISPLAY_TO_INTERNAL
 from .model_inference import get_predictor
 from .feature_engineering import generate_features
 
@@ -34,10 +32,6 @@ MAX_TOKENS = 800
 # Prompt path
 PROMPT_PATH = BASE_DIR / 'prompts' / 'explainer_system_prompt.md'
 
-# Cooldown tracking
-_last_call_time: float = 0
-COOLDOWN_SECONDS = 15
-
 
 @dataclass
 class LLMExplanationResult:
@@ -45,7 +39,7 @@ class LLMExplanationResult:
     success: bool
     explanation: Optional[str]
     error_message: Optional[str]
-    error_type: Optional[str]  # 'cooldown', 'credits', 'api_error', 'config'
+    error_type: Optional[str]  # 'credits', 'api_error', 'config'
 
 
 def _get_shap_values(
@@ -149,28 +143,21 @@ def _format_llm_input(
             "confidence": f"{(1-probability):.1%}"
         }
     
-    # Format descriptors with original names
-    descriptor_mapping = {
-        'Molecular Weight': 'MolWeight',
-        'LogP': 'LogP', 
-        'TPSA': 'TPSA',
-        'Hydrogen Bond Donors': 'NumHDonors',
-        'Hydrogen Bond Acceptors': 'NumHAcceptors',
-        'Rotatable Bonds': 'NumRotatableBonds',
-        'Total Atoms': 'NumAtoms',
-        'Heavy Atoms': 'NumHeavyAtoms',
-        'Ring Count': 'NumRings',
-        'Aromatic Rings': 'NumAromaticRings',
-        'Fraction sp3 Carbons': 'FractionCSP3',
-        'Bertz Complexity': 'BertzCT'
-    }
-    
+    # Convert display names to internal names using config mapping
     formatted_descriptors = {}
-    for display_name, internal_name in descriptor_mapping.items():
-        if display_name in descriptors:
-            formatted_descriptors[internal_name] = round(descriptors[display_name], 4)
+    for display_name, value in descriptors.items():
+        internal_name = DESCRIPTOR_DISPLAY_TO_INTERNAL.get(display_name, display_name)
+        formatted_descriptors[internal_name] = round(value, 4)
     
-    return {
+    # Identify ECFP bits in SHAP results that couldn't be mapped to substructures
+    ecfp_bits_in_shap = set()
+    for key in list(top_positive_shap.keys()) + list(bottom_negative_shap.keys()):
+        if key.startswith('ECFP_'):
+            ecfp_bits_in_shap.add(key)
+    
+    unmapped_bits = ecfp_bits_in_shap - set(substructure_smarts.keys())
+    
+    result = {
         "SMILES": smiles,
         "MolecularDescriptors": formatted_descriptors,
         "AHRToxicityPrediction": ahr_prediction,
@@ -178,6 +165,12 @@ def _format_llm_input(
         "Bottom5NegativeSHAP": {k: round(v, 4) for k, v in bottom_negative_shap.items()},
         "TopSubstructureContributions": substructure_smarts
     }
+    
+    # Add unmapped bits flag if any exist
+    if unmapped_bits:
+        result["UnmappedECFPBits"] = list(unmapped_bits)
+    
+    return result
 
 
 def _load_system_prompt() -> str:
@@ -215,32 +208,13 @@ def _call_llm(system_prompt: str, user_input: Dict[str, Any]) -> str:
     return response.choices[0].message.content
 
 
-def check_cooldown() -> Tuple[bool, int]:
-    """
-    Check if cooldown period has elapsed.
-    
-    Returns:
-        Tuple of (can_proceed, seconds_remaining)
-    """
-    global _last_call_time
-    
-    if _last_call_time == 0:
-        return True, 0
-    
-    elapsed = time.time() - _last_call_time
-    remaining = COOLDOWN_SECONDS - elapsed
-    
-    if remaining <= 0:
-        return True, 0
-    
-    return False, int(remaining) + 1
-
-
 def generate_llm_explanation(
     smiles: str,
     prediction: int,
     probability: float,
-    descriptors: Dict[str, float]
+    descriptors: Dict[str, float],
+    mol: Optional[Chem.Mol] = None,
+    features: Optional[pd.DataFrame] = None
 ) -> LLMExplanationResult:
     """
     Generate an LLM-based explanation for a toxicity prediction.
@@ -249,23 +223,13 @@ def generate_llm_explanation(
         smiles: Input SMILES string
         prediction: Binary prediction (0=non-toxic, 1=toxic)
         probability: Probability of toxicity
-        descriptors: Dictionary of molecular descriptors
+        descriptors: Dictionary of molecular descriptors (display names)
+        mol: Optional pre-computed RDKit molecule object
+        features: Optional pre-computed feature DataFrame
         
     Returns:
         LLMExplanationResult with explanation or error
     """
-    global _last_call_time
-    
-    # Check cooldown
-    can_proceed, remaining = check_cooldown()
-    if not can_proceed:
-        return LLMExplanationResult(
-            success=False,
-            explanation=None,
-            error_message=f"Please wait {remaining} seconds before requesting another explanation.",
-            error_type='cooldown'
-        )
-    
     # Check API key
     if not OPENROUTER_API_KEY:
         return LLMExplanationResult(
@@ -276,25 +240,27 @@ def generate_llm_explanation(
         )
     
     try:
-        # Parse molecule
-        mol = Chem.MolFromSmiles(smiles)
+        # Use provided mol or parse from SMILES
         if mol is None:
-            return LLMExplanationResult(
-                success=False,
-                explanation=None,
-                error_message="Failed to parse molecule structure.",
-                error_type='api_error'
-            )
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is None:
+                return LLMExplanationResult(
+                    success=False,
+                    explanation=None,
+                    error_message="Failed to parse molecule structure.",
+                    error_type='api_error'
+                )
         
-        # Generate features
-        features = generate_features(mol)
+        # Use provided features or generate them
         if features is None:
-            return LLMExplanationResult(
-                success=False,
-                explanation=None,
-                error_message="Failed to compute molecular features.",
-                error_type='api_error'
-            )
+            features = generate_features(mol)
+            if features is None:
+                return LLMExplanationResult(
+                    success=False,
+                    explanation=None,
+                    error_message="Failed to compute molecular features.",
+                    error_type='api_error'
+                )
         
         # Get predictor and compute SHAP
         predictor = get_predictor()
@@ -329,9 +295,6 @@ def generate_llm_explanation(
         # Load prompt and call LLM
         system_prompt = _load_system_prompt()
         explanation = _call_llm(system_prompt, llm_input)
-        
-        # Update cooldown timer
-        _last_call_time = time.time()
         
         return LLMExplanationResult(
             success=True,
