@@ -1,4 +1,4 @@
-# Aryl Hydrocarbon Receptor Toxicity Prediction Web App
+# ARIA: Aryl Hydrocarbon Receptor Toxicity Prediction Web App
 
 A machine learning web application for predicting **molecular toxicity** from SMILES strings, targeting the **NR-AhR (Aryl Hydrocarbon Receptor)** pathway from the Tox21 dataset.
 
